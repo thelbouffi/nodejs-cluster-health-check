@@ -1,118 +1,78 @@
 const cluster = require("cluster");
+const WorkerInstantiator = require("./lib/workers-instanciator");
+const { pong } = require("./helpers/communication-helper");
 
 const config = {
-  poolSize: /*5*/ 2,
-  maxPoolSize: 5,
+  poolSize: 2,
+  maxPoolSize: 8,
   hcTime: 1000,
-  delay: 1,
+  delay: 1, // in ms
+  // delay: 70, // in µs
+  // delay: 200000, // in ns,
+  precision: 400,
 };
 
 if (cluster.isMaster) {
   console.log(`Master ${process.pid} is running`);
   // initialise slave workers array
-  const workers = [];
+  const workers = new WorkerInstantiator();
 
   // frok slave workers corresponding to pool size
   for (let i = 0; i < config.poolSize; i++) {
-    const w = {
-      worker: cluster.fork(),
-      available: true,
-      lastHC: Date.now(),
-    };
-
-    // push slave forker worker into their array
-    workers.push(w);
-
-    // master worker listen for pong comming from each slave worker
-    w.worker.on("message", (data) => {
-      if (data && typeof data === "object" && data.type === "pong") {
-        w.available = true;
-        w.lastHC = Date.now();
-        console.log("slave pong", data.pid);
-      }
-    });
+    workers.forkWorker();
   }
 
-  setInterval(() => {
-    // ping ech existing worker
-    workers.forEach((w) => {
-      if (w.available === true) {
-        w.lastHC = Date.now(); // ping without being sure that we the pong will immediatly be recieved
-        // w.worker.process.send({ type: "ping", worker: w.worker.id });
-        w.worker.send({ type: "ping", pid: w.worker.process.pid });
-        console.log("master ping ", w.worker.process.pid);
-      }
-    });
+  // set a watcher that manage slave workers (health check manager)
+  const watcher = setInterval(() => {
+    // ping each existing worker
+    workers.pingSlaveWorkers();
 
-    // find not available workers
-    workers.forEach((w) => {
-      if (Date.now() - w.lastHC >= config.delay) {
-        console.log(
-          `${Date.now()}-${w.lastHC} = ${Date.now() - w.lastHC} > ${
-            config.delay
-          }`
-        );
-        w.available = false;
-      }
-      // console.log(`=====> id: ${w.worker.id} pid: ${w.worker.process.pid}`);
-    });
+    // evaluate all workers availability
+    workers.evaluateWorkersAvailability(config.delay, config.precision);
+    // workers.evaluateWorkersAvailability(config.delay);
 
-    // list available and not available workers
-    const unavailableWrkrs = workers.filter((w) => w.available === false);
-    console.log("unavailableWrkrs.length ", unavailableWrkrs.length);
-    console.log({
-      workers: workers.map((w) => {
-        return {
-          id: w.worker.id,
-          pid: w.worker.process.pid,
-          available: w.available,
-          lastHC: w.lastHC,
-        };
-      }),
-    });
+    // get unvailable workers size
+    const unavailableWrkrsSize = workers.getUnvailableWorkersSize();
+    // console.log({unavailableWrkrsSize});
+
+    // get total workers size
+    const totalWorkersSize = workers.getTotalWorkersSize();
+    // console.log({totalWorkersSize})
+
+    // fork workers if unavailable workers exceed pool size and max pool size is still not reached
+    // console.log(unavailableWrkrsSize >= config.poolSize && totalWorkersSize < config.maxPoolSize);
     if (
-      unavailableWrkrs.length >= config.poolSize &&
-      workers.length < config.maxPoolSize
+      unavailableWrkrsSize >= config.poolSize &&
+      totalWorkersSize < config.maxPoolSize
     ) {
-      console.log("FORK FORK FORK");
-      const w = {
-        worker: cluster.fork(),
-        available: true,
-        lastHC: Date.now(),
-      };
-      w.worker.on("message", (data) => {
-        if (data && typeof data === "object" && data.type === "pong") {
-          w.available = true;
-          w.lastHC = Date.now();
-          console.log("slave pong", data.pid);
-        }
-      });
-      workers.push(w);
-    } else if (
-      unavailableWrkrs.length < config.poolSize &&
-      workers.length > config.poolSize
+      workers.forkWorker();
+    }
+
+    // kill exessive workers if unvailabale workers are less than pool size and total existent workers is over pool size
+    if (
+      unavailableWrkrsSize < config.poolSize &&
+      totalWorkersSize > config.poolSize
     ) {
-      for (i = 0; i < workers.length - config.poolSize; i++) {
-        console.log("KILL KILL KILL");
-        const w = workers.findIndex((w) => w.available === true);
-        workers[w].worker.kill();
-        workers.splice(w, 1);
+      for (i = 0; i < totalWorkersSize - config.poolSize; i++) {
+        workers.killWorker();
       }
     }
+
+    // log the state of forked workers
+    workers.logSlaveWorkers();
+    // console.log(process.hrtime());
+    // console.log(Date.now())
   }, config.hcTime);
 
+  // when process is killed disconnect cluster and kill watcher
   process.on("SIGINT", () => {
+    clearInterval(watcher);
     cluster.disconnect();
   });
 } else {
   // run server
   require("./app");
 
-  // recieve ping from master worker
-  process.on("message", (data) => {
-    console.log(`worker with pid ${data.pid} or process ${process.pid}`);
-    if (data && typeof data === "object" && data.type === "ping") {
-      process.send({ type: "pong", pid: process.pid });
-    }
-  });
+  // pong whenever slave recieves ping from master worker
+  pong();
 }

@@ -1,19 +1,3 @@
-### scenario
-
-Found problem that the GET can't be done from context of cluster, also problem of securing endpoint, and we should hit specific instance o server of cluster, So the realized solution is:
-
-1. start cluster
-
-   - is master? true
-     - start cronjob
-     - fork slave workers
-   - is master? false
-     - start server
-
-2. cronjob
-   - if slave worker are not ok=> kill
-   - if number of workers is not ok => fork
-
 ### scenario to implement
 
 - Params:
