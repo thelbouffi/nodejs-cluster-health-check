@@ -1,11 +1,11 @@
 {
-  "name": "cluster_availability",
+  "name": "nodejs-cluster-health-check",
   "version": "1.0.0",
-  "description": "",
+  "description": "A nodeJS cluster with health check and auto scaling of instances",
   "scripts": {},
   "author": "Taha",
   "license": "ISC",
   "dependencies": {
-    "node-schedule": "^1.3.2"
+    "express": "^4.17.1"
   }
 }

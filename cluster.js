@@ -3,13 +3,11 @@ const WorkerInstantiator = require("./lib/workers-instanciator");
 const { pong } = require("./helpers/communication-helper");
 
 const config = {
-  poolSize: 2,
-  maxPoolSize: 8,
-  hcTime: 1000,
+  poolSize: 1,
+  maxPoolSize: 3,
+  hcTime: 1000, // in ms
   delay: 1, // in ms
-  // delay: 70, // in µs
-  // delay: 200000, // in ns,
-  precision: 400,
+  precision: 0,
 };
 
 if (cluster.isMaster) {
@@ -29,7 +27,6 @@ if (cluster.isMaster) {
 
     // evaluate all workers availability
     workers.evaluateWorkersAvailability(config.delay, config.precision);
-    // workers.evaluateWorkersAvailability(config.delay);
 
     // get unvailable workers size
     const unavailableWrkrsSize = workers.getUnvailableWorkersSize();
@@ -37,10 +34,8 @@ if (cluster.isMaster) {
 
     // get total workers size
     const totalWorkersSize = workers.getTotalWorkersSize();
-    // console.log({totalWorkersSize})
 
     // fork workers if unavailable workers exceed pool size and max pool size is still not reached
-    // console.log(unavailableWrkrsSize >= config.poolSize && totalWorkersSize < config.maxPoolSize);
     if (
       unavailableWrkrsSize >= config.poolSize &&
       totalWorkersSize < config.maxPoolSize
@@ -60,8 +55,6 @@ if (cluster.isMaster) {
 
     // log the state of forked workers
     workers.logSlaveWorkers();
-    // console.log(process.hrtime());
-    // console.log(Date.now())
   }, config.hcTime);
 
   // when process is killed disconnect cluster and kill watcher
